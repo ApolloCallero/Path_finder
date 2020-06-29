@@ -1,0 +1,202 @@
+import sys
+import pygame
+from pygame.locals import *
+import random
+#global variables
+columns = 40
+rows = 30
+rectWidth = 25
+rectHeight = 25
+WINDOW_W = columns*rectHeight
+WINDOW_H = rows*rectHeight
+DISPLAY = pygame.display.set_mode((WINDOW_W,WINDOW_H))
+
+
+
+class Cell:
+    cell_clicked = 0
+    #initial target positon
+
+    def __init__(self,x,y):
+        self.wall = False
+        self.x_location = x#starting points
+        self.y_location = y
+        #make starting cell 1,1
+        if(self.x_location == 1 and self.y_location == 1):
+            self.my_cell = pygame.draw.rect(DISPLAY, (20,25,200), Rect(self.y_location*rectWidth,self.x_location*rectHeight,rectWidth,rectHeight))
+            self.start = True
+            self.target = False
+        #make target be at bottom left corner   
+        elif(self.x_location == rows - 2  and self.y_location == columns - 2):
+            self.my_cell = pygame.draw.rect(DISPLAY, (30,230,200), Rect(self.y_location*rectWidth,self.x_location*rectHeight,rectWidth,rectHeight))
+            self.target = True
+            self.start = False    
+        else:
+            self.target = False
+            self.start = False
+        self.left_node = None
+        self.right_node = None
+        self.up_node = None
+        self.down_node = None
+        self.neighbors = [self.left_node,self.right_node,self.up_node,self.down_node]
+
+    #only changes if its not a target/starting pos
+    def cell_click(self,cell_clicked):
+        if(cell_clicked%2 == 0 and self.target == False and self.start == False):
+            self.my_cell = pygame.draw.rect(DISPLAY, (0,0,0), Rect(self.y_location*rectWidth,self.x_location*rectHeight,rectWidth,rectHeight))
+            self.wall = False
+        if(cell_clicked%2 == 1 and self.target == False and self.start == False):
+            self.my_cell = pygame.draw.rect(DISPLAY, (200,69,69), Rect(self.y_location*rectWidth,self.x_location*rectHeight,rectWidth,rectHeight))
+            self.wall = True
+
+
+
+class Graph():
+    #takes in the grid of cells as paramter
+    def __init__(self,cell_grid):
+        self.cell_grid = cell_grid
+        # made an int grid so i could print to console to make sure everything is going smooth''' 0 == start   -1 == wall   empty == 1     target == 2'''
+        self.int_grid = []
+        #assigns each cell in the grid its neighbors
+        for r in range(rows):
+            temp_col = [] 
+            for c in range(columns):#append cell type to temp_col
+                #assignn nodes to all cells not on a side
+                if cell_grid[r][c].x_location != 0 and cell_grid[r][c].x_location != rows - 1 and cell_grid[r][c].y_location != 0 and cell_grid[r][c].y_location != columns - 1:
+                    cell_grid[r][c].left_node = cell_grid[r][c-1]
+                    cell_grid[r][c].right_node = cell_grid[r][c+1]
+                    cell_grid[r][c].up_node = cell_grid[r-1][c]
+                    cell_grid[r][c].down_node = cell_grid[r+1][c]
+                #assignn nodes to all cells in the top middle
+                elif cell_grid[r][c].x_location ==0 and cell_grid[r][c].y_location != 0 and cell_grid[r][c].y_location != columns - 1:
+                    cell_grid[r][c].down_node = cell_grid[r+1][c]
+                    cell_grid[r][c].left_node = cell_grid[r][c-1]
+                    cell_grid[r][c].right_node = cell_grid[r][c+1]
+                #bottom middle cells
+                elif cell_grid[r][c].x_location == rows-1 and cell_grid[r][c].y_location != 0 and cell_grid[r][c].y_location != columns -1:
+                    cell_grid[r][c].left_node = cell_grid[r][c-1]
+                    cell_grid[r][c].right_node = cell_grid[r][c+1]
+                    cell_grid[r][c].up_node = cell_grid[r-1][c]
+                #left middle cells
+                elif cell_grid[r][c].y_location == 0 and cell_grid[r][c].x_location !=0 and cell_grid[r][c].x_location != rows -1:
+                    cell_grid[r][c].up_node = cell_grid[r-1][c]
+                    cell_grid[r][c].down_node = cell_grid[r+1][c]
+                    cell_grid[r][c].right_node = cell_grid[r][c+1]
+                #right middle cells
+                elif cell_grid[r][c].y_location == columns - 1 and cell_grid[r][c].x_location !=0 and cell_grid[r][c].x_location != rows -1:
+                    cell_grid[r][c].up_node = cell_grid[r-1][c]
+                    cell_grid[r][c].down_node = cell_grid[r+1][c]
+                    cell_grid[r][c].left_node = cell_grid[r][c-1]
+                #top left corner cell
+                elif cell_grid[r][c].x_location == 0 and cell_grid[r][c].y_location == 0:
+                    cell_grid[r][c].right_node = cell_grid[r][c+1]
+                    cell_grid[r][c].down_node = cell_grid[r+1][c]
+                #top right corner cell
+                elif cell_grid[r][c].x_location == 0 and cell_grid[r][c].y_location == columns - 1:
+                    cell_grid[r][c].left_node = cell_grid[r][c-1]
+                    cell_grid[r][c].down_node = cell_grid[r+1][c]
+                #bottom left corner cell
+                elif cell_grid[r][c].x_location == rows - 1 and cell_grid[r][c].y_location == 0:
+                    cell_grid[r][c].right_node = cell_grid[r][c+1]
+                    cell_grid[r][c].up_node = cell_grid[r-1][c]
+                #bottom right corner cell
+                elif cell_grid[r][c].x_location == rows - 1 and cell_grid[r][c].y_location == columns -1:
+                    cell_grid[r][c].up_node = cell_grid[r-1][c]
+                    cell_grid[r][c].left_node = cell_grid[r][c-1]
+
+                cell_grid[r][c].neighbors = [cell_grid[r][c].left_node,cell_grid[r][c].right_node,cell_grid[r][c].up_node,cell_grid[r][c].down_node]#reassign the neighbor array in the cell
+                #assign values for my int grid
+        for r in range(rows):
+            temp_col = []
+            for c in range(columns):
+                if cell_grid[r][c].start == False and cell_grid[r][c].wall == False and cell_grid[r][c].target == False:
+                    temp_col.append(1)
+                elif cell_grid[r][c].wall == True:
+                    temp_col.append(-1)
+                elif cell_grid[r][c].target == True:
+                    temp_col.append(2)
+                elif cell_grid[r][c].start == True:
+                    temp_col.append(0)
+                    self.start = cell_grid[r][c]
+            self.int_grid.append(temp_col)          
+        #print grid to console and find the starting pos
+        for r in range(rows):
+            for c in range(columns):#append cell type to temp_col
+                print(self.int_grid[r][c], end='')
+            print()
+    def valid_path(self):
+
+        x = self.start.x_location
+        y = self.start.y_location
+
+        #loop thru all pssible moves
+        for i in range(4):
+            if move == 0:#up
+                x -= 1
+            elif move == 1:#down
+                x += 1
+            elif move == 2:#left
+                y -= 1
+            elif move == 3:#right
+                y += 1
+            #return false if the maze path is out of bounds
+            if not(0 <= x < columns and 0 <= y < rows):
+                return False
+            #if path hits a wall
+            elif self.cell_grid[x][y].wall == True:
+                return False
+        return True
+    
+def grid(r,c):
+    #initiate grid array and target
+    grid_arr = [[0 for x in range(c)] for y in range(r)]
+    #sets each item in grid_arr to a cell
+    for row in range(r):
+        for col in range(c):
+            grid_arr[row][col] = Cell(row,col)
+    return grid_arr
+
+def draw_grid(surface,grid):
+    #horizontal lines
+    y = 0
+    for row in range(rows):
+        y +=rectWidth
+        pygame.draw.line(surface, (255,255,255), (0,y),(WINDOW_W, y))
+
+    #vertical lines
+    x = 0
+    for col in range(columns):
+        x+=rectWidth
+        pygame.draw.line(surface,(255,255,255), (x,0),(x,WINDOW_H))
+
+def redrawWindow(surface,grid):
+    draw_grid(surface,grid)
+    pygame.display.update()   
+
+def main():
+    #row x col array of cells
+    grid_arr = grid(rows,columns)
+    graph = Graph(grid_arr)
+    done = False
+    #'game' loop
+    while not done:
+        #events
+        for event in pygame.event.get():
+            redrawWindow(DISPLAY,grid_arr)
+            if event.type == pygame.QUIT:
+                done = True
+            #clicked
+            if event.type == MOUSEMOTION:
+                mousex, mousey = event.pos
+            if event.type == MOUSEBUTTONDOWN:
+                    mousex, mousey = event.pos
+                    cell_y = mousey//rectHeight
+                    cell_x = mousex//rectWidth
+                    grid_arr[cell_y][cell_x].cell_clicked+=1
+                    grid_arr[cell_y][cell_x].cell_click(grid_arr[cell_y][cell_x].cell_clicked)#updates wall data
+                    graph = Graph(grid_arr)
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_RETURN:
+                    print('not yet implmented')
+
+main()
