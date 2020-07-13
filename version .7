@@ -1,0 +1,473 @@
+import sys
+import queue
+import pygame
+import heapq
+from pygame.locals import *
+import random
+from heapq import heappop, heappush
+from math import inf
+pygame.init()
+
+#global variables
+columns = 75
+rows = 40
+rectWidth = 25
+rectHeight = 25
+start_x = 1
+start_y = 1
+targ_x = rows - 2 
+targ_y = columns - 2
+MAX = 999999
+WINDOW_W = columns*rectHeight
+WINDOW_H = rows*rectHeight
+DISPLAY = pygame.display.set_mode((WINDOW_W,WINDOW_H))
+def text_objects(text, font):
+    textSurface = font.render(text, True, (250,0,0))
+    return textSurface, textSurface.get_rect()
+class Cell:
+    cell_clicked = 0
+
+    #initial target positon
+    def __init__(self,x,y):
+        self.weight = 1
+        self.wall = False
+        self.x_location = x#starting points
+        self.y_location = y
+        self.checked = False
+        #make starting cell 1,1
+        if(self.x_location == 1 and self.y_location == 1):
+            self.my_cell = pygame.draw.rect(DISPLAY, (20,25,200), Rect(self.y_location*rectWidth,self.x_location*rectHeight,rectWidth,rectHeight))
+            self.start = True
+            self.target = False
+            start_x = self.x_location
+            start_y = self.y_location
+        #make target be at bottom left corner   
+        elif(self.x_location == targ_x  and self.y_location == targ_y):
+            self.my_cell = pygame.draw.rect(DISPLAY, (30,230,200), Rect(self.y_location*rectWidth,self.x_location*rectHeight,rectWidth,rectHeight))
+            self.target = True
+            self.start = False    
+        else:
+            self.target = False
+            self.start = False
+        #neighbors
+        self.left_node = None
+        self.right_node = None
+        self.up_node = None
+        self.down_node = None
+        self.neighbors = [self.left_node,self.right_node,self.up_node,self.down_node]
+        #for dijktras
+        self.min_dist = MAX
+        self.dj_path = []
+        self.visited = False
+    #only changes if its not a target/starting pos
+    def reset(self):
+        #does nothing if the cell is a starting point,target or wall
+        if (self.x_location == start_x and self.y_location == start_y) or (self.x_location == targ_x and self.y_location ==targ_y):
+            return
+        self.my_cell = pygame.draw.rect(DISPLAY, (0,0,0), Rect(self.y_location*rectWidth,self.x_location*rectHeight,rectWidth,rectHeight))
+    def cell_click(self,cell_clicked):
+        #not wall
+        if(cell_clicked%2 == 0 and self.target == False and self.start == False):
+            self.my_cell = pygame.draw.rect(DISPLAY, (0,0,0), Rect(self.y_location*rectWidth,self.x_location*rectHeight,rectWidth,rectHeight))
+            self.wall = False
+        #wall
+        if(cell_clicked%2 == 1 and self.target == False and self.start == False):
+            self.my_cell = pygame.draw.rect(DISPLAY, (200,69,69), Rect(self.y_location*rectWidth,self.x_location*rectHeight,rectWidth,rectHeight))
+            self.wall = True
+    #change colour if that cell was visited
+    def traversed(self):
+        if self.start == True or self.target == True:#stops if cell is a starting point or target
+            return
+        self.my_cell = pygame.draw.rect(DISPLAY, (0,130,200), Rect(self.y_location*rectWidth,self.x_location*rectHeight,rectWidth,rectHeight))#change colour of cell
+        #in order to display the weight still
+        if self.weight!=0:
+            font = pygame.font.SysFont("arialblack", rectHeight - 7)
+            TextSurf, TextRect = text_objects(str(self.weight), font)
+            TextRect.center = (self.y_location*rectWidth+rectWidth/2,self.x_location*rectHeight+rectHeight/2)#display the weight on the cell
+            DISPLAY.blit(TextSurf, TextRect)
+    def correct_path(self):
+        if self.start == False and self.target == False:
+            self.my_cell = pygame.draw.rect(DISPLAY, (255,100,255), Rect(self.y_location*rectWidth,self.x_location*rectHeight,rectWidth,rectHeight))
+        if self.weight!=0:
+            font = pygame.font.SysFont("arialblack", rectHeight - 7)
+            TextSurf, TextRect = text_objects(str(self.weight), font)
+            TextRect.center = (self.y_location*rectWidth+rectWidth/2,self.x_location*rectHeight+rectHeight/2)#display the weight on the cell
+            DISPLAY.blit(TextSurf, TextRect)
+    def weighted(self,weight):
+        #stops if the user trys to make thwe starting or wall or target point a weighted cell
+        if self.start == True or self.target == True or self.wall == True:
+            return
+        self.weight = int(weight)
+        font = pygame.font.SysFont("arialblack", rectHeight - 7)
+        TextSurf, TextRect = text_objects(weight, font)
+        self.my_cell = pygame.draw.rect(DISPLAY, (0,0,0), Rect(self.y_location*rectWidth,self.x_location*rectHeight,rectWidth,rectHeight))#set the cell back to black
+        TextRect.center = (self.y_location*rectWidth+rectWidth/2,self.x_location*rectHeight+rectHeight/2)#display the weight on the cell
+        DISPLAY.blit(TextSurf, TextRect)
+        pygame.display.update()
+    def minDist_update(self):
+        self.min_dist = self.weight
+        for p in range(len(self.dj_path)):
+            self.min_dist+=self.dj_path[p].weight
+
+class Graph():
+    #takes in the grid of cells as paramter
+    def __init__(self,cell_grid):
+        self.cell_grid = cell_grid
+        # made an int grid so i could print to console to make sure everything is going smooth''' 0 == start   -1 == wall   empty == 1     target == 2'''
+        self.int_grid = []
+        #assigns each cell in the grid its neighbors
+        for r in range(rows):
+            temp_col = [] 
+            for c in range(columns):#append cell type to temp_col
+                #assignn nodes to all cells not on a side
+                if cell_grid[r][c].x_location != 0 and cell_grid[r][c].x_location != rows - 1 and cell_grid[r][c].y_location != 0 and cell_grid[r][c].y_location != columns - 1:
+                    cell_grid[r][c].left_node = cell_grid[r][c-1]
+                    cell_grid[r][c].right_node = cell_grid[r][c+1]
+                    cell_grid[r][c].up_node = cell_grid[r-1][c]
+                    cell_grid[r][c].down_node = cell_grid[r+1][c]
+                #assignn nodes to all cells in the top middle
+                elif cell_grid[r][c].x_location ==0 and cell_grid[r][c].y_location != 0 and cell_grid[r][c].y_location != columns - 1:
+                    cell_grid[r][c].down_node = cell_grid[r+1][c]
+                    cell_grid[r][c].left_node = cell_grid[r][c-1]
+                    cell_grid[r][c].right_node = cell_grid[r][c+1]
+                #bottom middle cells
+                elif cell_grid[r][c].x_location == rows-1 and cell_grid[r][c].y_location != 0 and cell_grid[r][c].y_location != columns -1:
+                    cell_grid[r][c].left_node = cell_grid[r][c-1]
+                    cell_grid[r][c].right_node = cell_grid[r][c+1]
+                    cell_grid[r][c].up_node = cell_grid[r-1][c]
+                #left middle cells
+                elif cell_grid[r][c].y_location == 0 and cell_grid[r][c].x_location !=0 and cell_grid[r][c].x_location != rows -1:
+                    cell_grid[r][c].up_node = cell_grid[r-1][c]
+                    cell_grid[r][c].down_node = cell_grid[r+1][c]
+                    cell_grid[r][c].right_node = cell_grid[r][c+1]
+                #right middle cells
+                elif cell_grid[r][c].y_location == columns - 1 and cell_grid[r][c].x_location !=0 and cell_grid[r][c].x_location != rows -1:
+                    cell_grid[r][c].up_node = cell_grid[r-1][c]
+                    cell_grid[r][c].down_node = cell_grid[r+1][c]
+                    cell_grid[r][c].left_node = cell_grid[r][c-1]
+                #top left corner cell
+                elif cell_grid[r][c].x_location == 0 and cell_grid[r][c].y_location == 0:
+                    cell_grid[r][c].right_node = cell_grid[r][c+1]
+                    cell_grid[r][c].down_node = cell_grid[r+1][c]
+                #top right corner cell
+                elif cell_grid[r][c].x_location == 0 and cell_grid[r][c].y_location == columns - 1:
+                    cell_grid[r][c].left_node = cell_grid[r][c-1]
+                    cell_grid[r][c].down_node = cell_grid[r+1][c]
+                #bottom left corner cell
+                elif cell_grid[r][c].x_location == rows - 1 and cell_grid[r][c].y_location == 0:
+                    cell_grid[r][c].right_node = cell_grid[r][c+1]
+                    cell_grid[r][c].up_node = cell_grid[r-1][c]
+                #bottom right corner cell
+                elif cell_grid[r][c].x_location == rows - 1 and cell_grid[r][c].y_location == columns -1:
+                    cell_grid[r][c].up_node = cell_grid[r-1][c]
+                    cell_grid[r][c].left_node = cell_grid[r][c-1]
+
+                cell_grid[r][c].neighbors = [cell_grid[r][c].left_node,cell_grid[r][c].right_node,cell_grid[r][c].up_node,cell_grid[r][c].down_node]#reassign the neighbor array in the cell
+                #assign values for my int grid
+        for r in range(rows):
+            temp_col = []
+            for c in range(columns):
+                if cell_grid[r][c].start == False and cell_grid[r][c].wall == False and cell_grid[r][c].target == False:
+                    temp_col.append(1)
+                elif cell_grid[r][c].wall == True:
+                    temp_col.append(-1)
+                elif cell_grid[r][c].target == True:
+                    temp_col.append(2)
+                elif cell_grid[r][c].start == True:
+                    temp_col.append(0)
+                    self.start = cell_grid[r][c]
+            self.int_grid.append(temp_col)          
+        #print grid to console and find the starting pos
+        for r in range(rows):
+            for c in range(columns):#append cell type to temp_col
+                print(self.int_grid[r][c], end='')
+            print()
+    
+    def get_int_grid(self):
+        return self.int_grid
+
+
+#bfs
+def valid_path_bfs(cell_grid,grid,moves):
+    x = start_x
+    y = start_y
+    #loop thru all pssible moves
+    for i in moves:
+        if i == "U":#up                
+            x -= 1    
+        elif i == "D":#down
+            x += 1
+        elif i == "L":#left
+            y -= 1
+        elif i == "R":#right
+            y += 1
+        #return false if the maze path is out of bounds
+        if not(0 <= x < columns and 0 <= y < rows):
+            return False
+        #if path hits a wall
+        elif grid[y][x] == -1:
+            return False
+    return True
+
+
+    #takes in the moves so far
+def check_path_bfs(grid,moves):
+    x = start_x
+    y = start_y
+    for move in moves:
+        if move == "U":#up
+            x -= 1
+        elif move == "D":#down
+            x += 1
+        elif move == "L":#left
+            y -= 1
+        elif move == "R":#right
+            y += 1
+        if grid[y][x] == 2:
+            print(moves)
+            return True
+    return False
+def show_path(animated_grid,moves):
+    dx = 0
+    dy = 0
+    for move in moves:
+        if move == "D":
+            dy+=1
+            animated_grid[start_x + dx][start_y + dy].correct_path()
+        elif move =="U":
+            dy-=1
+            animated_grid[start_x + dx][start_y + dy].correct_path()
+        elif move == "L":
+            dx-=1
+            animated_grid[start_x + dx][start_y + dy].correct_path()
+        elif move == "R":
+            dx+=1
+            animated_grid[start_x + dx][start_y + dy].correct_path()
+def traversing(animated_grid,moves):      
+    dy = 0
+    dx = 0
+    for move in moves:
+        if move == "D":
+            dx+=1
+            animated_grid[start_y + dy][start_x + dx].traversed()
+        elif move =="U":
+            dx-=1
+            animated_grid[start_y + dy][start_x + dx].traversed()
+        elif move == "L":
+            dy-=1
+            animated_grid[start_y + dy][start_x + dx].traversed()
+        elif move == "R":
+            dy+=1
+            animated_grid[start_y + dy][start_x + dx].traversed()
+
+#dfs, instead of using the int grid i implmented the cell grid for this search
+def valid_path_dfs(x,y,cell_grid):
+    if not(0 <= y < columns and 0 <= x < rows):
+        return False
+        #if path hits a wall
+    elif cell_grid[x][y].wall == True:
+        return False
+    #cell_grid[x][y].traversed()#display that the algorithm traversed this cell
+    return True
+def check_path_dfs(x,y,cell_grid):
+    if cell_grid[x][y].target == True:
+        return True
+    return False
+
+def dfs(dx,dy,grid,path_gone,correct):
+    #pops out once a path is found 
+    found = False
+    if check_path_dfs(dx,dy,grid):
+        found = True
+        correct = path_gone
+        return correct,found
+    #iterates over all possible moves
+    while not(found):
+        for i in ["D","U","R","L"]:
+            if i == "U" and grid[dx][dy].up_node != None and valid_path_dfs(dx-1,dy,grid) and correct == "":
+                if grid[dx][dy].up_node.wall == False and grid[dx][dy].up_node.checked == False and grid[dx][dy].up_node.start == False:
+                    grid[dx][dy].up_node.checked = True
+                    path_gone+="U"
+                    print(path_gone)
+                    grid[dx][dy].traversed()
+                    correct,found = dfs(dx-1,dy,grid,path_gone,correct)
+            elif i == "D" and grid[dx][dy].down_node != None and valid_path_dfs(dx+1,dy,grid) and correct == "":
+                if grid[dx][dy].down_node.wall == False and grid[dx][dy].down_node.checked == False and grid[dx][dy].down_node.start == False:
+                    grid[dx][dy].down_node.checked = True                
+                    path_gone+="D"
+                    print(path_gone)
+                    grid[dx][dy].traversed()
+                    correct,found = dfs(dx+1,dy,grid,path_gone,correct)
+            elif i == "L" and grid[dx][dy].left_node != None and valid_path_dfs(dx,dy-1,grid)and correct == "":
+                if grid[dx][dy].left_node.wall == False and grid[dx][dy].left_node.checked == False and grid[dx][dy].left_node.start == False:
+                    grid[dx][dy].left_node.checked = True
+                    path_gone+="L"
+                    print(path_gone)
+                    grid[dx][dy].traversed()
+                    correct,found = dfs(dx,dy-1,grid,path_gone,correct)
+            elif i == "R" and grid[dx][dy].right_node != None and valid_path_dfs(dx,dy+1,grid)and correct == "":
+                if grid[dx][dy].right_node.wall == False and grid[dx][dy].right_node.checked == False and grid[dx][dy].right_node.start == False:
+                    grid[dx][dy].right_node.checked = True
+                    path_gone+="R"
+                    print(path_gone)
+                    grid[dx][dy].traversed()
+                    correct,found = dfs(dx,dy+1,grid,path_gone,correct)
+    return correct,found
+
+
+#Dijktras functions
+def dij_dicts(animated_grid):
+    cell_dict = {}#(cell_x,cell_y):[cells neighbors]
+    distances = {}#(cell_x,cell_y):inf....cell:0...cell:inf..
+    #iterate thru each cell
+    for row in range(rows):
+        for col in range(columns):
+            n = []
+            #add its neighbors to n if its a valid spot
+            for i in range(len(animated_grid[row][col].neighbors)):
+                if animated_grid[row][col].neighbors[i] !=None:
+                    if animated_grid[row][col].neighbors[i].wall != True:
+                        n.append((animated_grid[row][col].neighbors[i].x_location,animated_grid[row][col].neighbors[i].y_location))
+            distances[(animated_grid[row][col].x_location,animated_grid[row][col].y_location)] = inf#set each value to infinty
+            cell_dict.update({(animated_grid[row][col].x_location,animated_grid[row][col].y_location):n})#update the dict
+    distances[(start_x,start_y)] = 0#set the starting node to zero
+    return distances,cell_dict
+
+def dijktras(animated_grid):
+    distances,cell_dict = dij_dicts(animated_grid)
+    vertices_to_explore = [(0, (start_x,start_y))]
+
+    #iterates until every pssible node has been visited
+    while vertices_to_explore:
+        current_distance, temp_tuple = heappop(vertices_to_explore)#pops the smallest element
+        curr_x,curr_y = temp_tuple[0],temp_tuple[1]
+        animated_grid[curr_x][curr_y].traversed()
+        #iterate over all the neighbors in the dict key
+        for cell_n in cell_dict[temp_tuple]:
+            n_x,n_y = cell_n[0],cell_n[1]
+            temp_dist = current_distance + animated_grid[n_x][n_y].weight
+            if temp_dist<distances[(n_x,n_y)]:#if the dist is less than the current dist at that key
+                distances[cell_n] = temp_dist
+                heappush(vertices_to_explore, (temp_dist,(n_x,n_y)))#push the cell to the explore array
+                animated_grid[n_x][n_y].dj_path = []
+                for p in animated_grid[curr_x][curr_y].dj_path:#make the the next cell path equal to the current path
+                    animated_grid[n_x][n_y].dj_path.append(p)
+                animated_grid[n_x][n_y].dj_path.append(animated_grid[curr_x][curr_y])#add the cell to the neighboring path
+    #to display the path
+    for i in animated_grid[targ_x][targ_y].dj_path:
+        i.correct_path()
+
+def rando_walls(animated_grid):
+    for r in range(rows):
+        for c in range(columns):
+            if random.random()<.3 and not(r == start_x and c == start_y) and not(r == targ_x and c == targ_y):
+                animated_grid[r][c].cell_clicked+=1
+                animated_grid[r][c].cell_click(animated_grid[r][c].cell_clicked)
+
+#utility functions for the gui
+def grid(r,c):
+    #initiate grid array and target
+    grid_arr = [[0 for x in range(c)] for y in range(r)]
+    #sets each item in grid_arr to a cell
+    for row in range(r):
+        for col in range(c):
+            grid_arr[row][col] = Cell(row,col)
+            grid_arr[row][col].reset()
+    return grid_arr
+
+def draw_grid(surface,grid):
+    #horizontal lines
+    y = 0
+    for row in range(rows):
+        y +=rectWidth
+        pygame.draw.line(surface, (255,255,255), (0,y),(WINDOW_W, y))
+
+    #vertical lines
+    x = 0
+    for col in range(columns):
+        x+=rectWidth
+        pygame.draw.line(surface,(255,255,255), (x,0),(x,WINDOW_H))
+
+def redrawWindow(surface,grid):
+    draw_grid(surface,grid)
+    pygame.display.update()   
+
+def main():
+    #row x col array of cells
+    grid_arr = grid(rows,columns)
+    graph = Graph(grid_arr)
+    done = False
+    #'game' loop
+    while not done:
+        #events
+        for event in pygame.event.get():
+            redrawWindow(DISPLAY,grid_arr)
+            if event.type == pygame.QUIT:
+                done = True
+            #mouse moves
+            if event.type == MOUSEMOTION:
+                mousex, mousey = event.pos
+                cell_y = mousey//rectHeight
+                cell_x = mousex//rectWidth
+            #mouse clicked
+            if event.type == MOUSEBUTTONDOWN:
+                    mousex, mousey = event.pos
+                    grid_arr[cell_y][cell_x].cell_clicked+=1
+                    grid_arr[cell_y][cell_x].cell_click(grid_arr[cell_y][cell_x].cell_clicked)#updates wall data
+                    graph = Graph(grid_arr)
+            #the searches
+            if event.type == pygame.KEYDOWN:
+                #b for breadth first
+                if event.key == pygame.K_b:
+                    num_grid = graph.get_int_grid()
+                    print(num_grid)
+                    q = queue.Queue()
+                    q.put("")
+                    moves = ""
+                    cells_traversed = 0
+                    while not check_path_bfs(num_grid,moves):#iterates unil a valid path is found
+                        moves = q.get()
+                        for i in ["L", "R", "U", "D"]:
+                            new_move = moves + i
+                            if valid_path_bfs(grid_arr,num_grid,new_move):
+                                traversing(grid_arr,moves)
+                                cells_traversed+=1
+                                if cells_traversed %5 == 0:
+                                    redrawWindow(DISPLAY,grid_arr)
+                                q.put(new_move)
+                    show_path(grid_arr,moves)
+                
+                #dfs
+                if event.key == pygame.K_d:
+                    path = ""
+                    path,trash = dfs(start_x,start_y,grid_arr,"",path)
+
+                #dijkstra    
+                if event.key == pygame.K_j:
+                    dijktras(grid_arr)
+
+                #reset the maze
+                if event.key ==  pygame.K_BACKSPACE: 
+                    grid_arr = grid(rows,columns)
+                    graph = Graph(grid_arr)
+                #random walls
+                if event.key == K_r:
+                    rando_walls(grid_arr)
+                #weights
+                if event.key == pygame.K_2:
+                    grid_arr[cell_y][cell_x].weighted("2")
+                elif event.key == pygame.K_3:
+                    grid_arr[cell_y][cell_x].weighted("3")
+                elif event.key == pygame.K_4:
+                    grid_arr[cell_y][cell_x].weighted("4")
+                elif event.key == pygame.K_5:
+                    grid_arr[cell_y][cell_x].weighted("5")
+                elif event.key == pygame.K_6:
+                    grid_arr[cell_y][cell_x].weighted("6")
+                elif event.key == pygame.K_7:
+                    grid_arr[cell_y][cell_x].weighted("7")
+                elif event.key == pygame.K_8:
+                    grid_arr[cell_y][cell_x].weighted("8")
+                elif event.key == pygame.K_9:
+                    grid_arr[cell_y][cell_x].weighted("9")
+main()
